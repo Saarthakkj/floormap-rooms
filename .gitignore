@@ -9,6 +9,10 @@ wheels/
 # Virtual environments
 .venv
 
+# Lock file excluded from git so Vercel uses requirements.txt instead
+# Regenerate locally with: uv lock
+uv.lock
+
 # Sample output directories
 samples/crops*/
 samples/crops_final/
@@ -16,3 +20,4 @@ samples/crops_final/
 # Node
 node_modules/
 .vercel/
+.vercel
