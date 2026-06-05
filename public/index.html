@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Floor Map Room Extractor</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f1117; color: #e0e0e0; min-height: 100vh; }
+    .header { padding: 24px 32px; border-bottom: 1px solid #2a2d35; }
+    .header h1 { font-size: 24px; font-weight: 600; }
+    .header p { color: #888; margin-top: 4px; font-size: 14px; }
+    .container { max-width: 1200px; margin: 0 auto; padding: 24px 32px; }
+
+    .upload-zone {
+      border: 2px dashed #3a3d45; border-radius: 12px; padding: 48px;
+      text-align: center; cursor: pointer; transition: all 0.2s;
+      background: #161921; margin-bottom: 24px;
+    }
+    .upload-zone:hover, .upload-zone.dragover { border-color: #5b8def; background: #1a2030; }
+    .upload-zone h3 { font-size: 18px; margin-bottom: 8px; }
+    .upload-zone p { color: #888; font-size: 14px; }
+    .upload-zone input { display: none; }
+
+    .params {
+      display: flex; gap: 24px; margin-bottom: 24px; flex-wrap: wrap;
+      padding: 16px; background: #161921; border-radius: 8px;
+    }
+    .param { flex: 1; min-width: 200px; }
+    .param label { display: block; font-size: 13px; color: #aaa; margin-bottom: 6px; }
+    .param input[type=range] { width: 100%; accent-color: #5b8def; }
+    .param .val { font-size: 12px; color: #5b8def; float: right; }
+
+    .btn {
+      background: #5b8def; color: #fff; border: none; padding: 10px 24px;
+      border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 500;
+      transition: background 0.2s;
+    }
+    .btn:hover { background: #4a7ce0; }
+    .btn:disabled { background: #3a3d45; cursor: not-allowed; }
+    .btn-row { display: flex; gap: 12px; margin-bottom: 24px; align-items: center; }
+
+    .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid #fff4; border-top-color: #fff; border-radius: 50%; animation: spin 0.6s linear infinite; margin-right: 8px; vertical-align: middle; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .results { display: none; }
+    .side-by-side { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+    .side-by-side .panel { background: #161921; border-radius: 8px; padding: 12px; }
+    .side-by-side .panel h3 { font-size: 14px; color: #aaa; margin-bottom: 8px; }
+    .side-by-side .panel img { width: 100%; border-radius: 4px; }
+
+    .crops-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 16px; margin-bottom: 24px;
+    }
+    .crop-card {
+      background: #161921; border-radius: 8px; padding: 12px; text-align: center;
+    }
+    .crop-card img {
+      width: 100%; border-radius: 4px; margin-bottom: 8px;
+      background: repeating-conic-gradient(#2a2d35 0% 25%, #1e2028 0% 50%) 50% / 16px 16px;
+    }
+    .crop-card .name { font-size: 13px; font-weight: 500; }
+    .crop-card .area { font-size: 12px; color: #888; }
+
+    .status { color: #888; font-size: 14px; }
+
+    @media (max-width: 768px) {
+      .side-by-side { grid-template-columns: 1fr; }
+      .params { flex-direction: column; }
+      .container { padding: 16px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>Floor Map Room Extractor</h1>
+    <p>Upload a floor plan image to detect and extract individual room crops</p>
+  </div>
+  <div class="container">
+    <div class="upload-zone" id="dropZone">
+      <h3>Drop a floor plan image here</h3>
+      <p>or click to browse (PNG, JPG, BMP, TIFF)</p>
+      <input type="file" id="fileInput" accept="image/png,image/jpeg,image/bmp,image/tiff">
+    </div>
+
+    <div class="params">
+      <div class="param">
+        <label>Door Gap Kernel <span class="val" id="kernelVal">15</span></label>
+        <input type="range" id="kernel" min="3" max="50" value="15" step="2">
+      </div>
+      <div class="param">
+        <label>Min Room Area (px) <span class="val" id="areaVal">3000</span></label>
+        <input type="range" id="minArea" min="100" max="10000" value="3000" step="100">
+      </div>
+      <div class="param">
+        <label>Wall Inclusion (px) <span class="val" id="wallVal">15</span></label>
+        <input type="range" id="wallInclude" min="0" max="40" value="15" step="1">
+      </div>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn" id="processBtn" disabled>Extract Rooms</button>
+      <button class="btn" id="downloadBtn" style="display:none; background:#2a8c4a;">Download All Crops (.zip)</button>
+      <span class="status" id="status"></span>
+    </div>
+
+    <div class="results" id="results">
+      <div class="side-by-side">
+        <div class="panel">
+          <h3>Original</h3>
+          <img id="originalImg">
+        </div>
+        <div class="panel">
+          <h3 id="detectedLabel">Detected Rooms</h3>
+          <img id="annotatedImg">
+        </div>
+      </div>
+      <h3 style="margin-bottom: 12px;">Individual Room Crops</h3>
+      <div class="crops-grid" id="cropsGrid"></div>
+    </div>
+  </div>
+
+  <script>
+    const dropZone = document.getElementById('dropZone');
+    const fileInput = document.getElementById('fileInput');
+    const processBtn = document.getElementById('processBtn');
+    const downloadBtn = document.getElementById('downloadBtn');
+    const status = document.getElementById('status');
+    const results = document.getElementById('results');
+    let selectedFile = null;
+    let lastResult = null;
+
+    dropZone.addEventListener('click', () => fileInput.click());
+    dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+    dropZone.addEventListener('drop', e => {
+      e.preventDefault();
+      dropZone.classList.remove('dragover');
+      if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+    });
+    fileInput.addEventListener('change', () => { if (fileInput.files.length) handleFile(fileInput.files[0]); });
+
+    function handleFile(file) {
+      if (!file.type.startsWith('image/')) { status.textContent = 'Please select an image file'; return; }
+      selectedFile = file;
+      dropZone.querySelector('h3').textContent = file.name;
+      dropZone.querySelector('p').textContent = `${(file.size / 1024).toFixed(1)} KB`;
+      processBtn.disabled = false;
+
+      const reader = new FileReader();
+      reader.onload = e => { document.getElementById('originalImg').src = e.target.result; };
+      reader.readAsDataURL(file);
+    }
+
+    document.getElementById('kernel').addEventListener('input', e => document.getElementById('kernelVal').textContent = e.target.value);
+    document.getElementById('minArea').addEventListener('input', e => document.getElementById('areaVal').textContent = e.target.value);
+    document.getElementById('wallInclude').addEventListener('input', e => document.getElementById('wallVal').textContent = e.target.value);
+
+    processBtn.addEventListener('click', async () => {
+      if (!selectedFile) return;
+      processBtn.disabled = true;
+      downloadBtn.style.display = 'none';
+      status.innerHTML = '<span class="spinner"></span> Processing...';
+
+      const formData = new FormData();
+      formData.append('image', selectedFile);
+      formData.append('close_kernel_size', document.getElementById('kernel').value);
+      formData.append('min_room_area', document.getElementById('minArea').value);
+      formData.append('wall_include', document.getElementById('wallInclude').value);
+
+      try {
+        const res = await fetch('/api/extract', { method: 'POST', body: formData });
+        if (!res.ok) {
+          const err = await res.json();
+          throw new Error(err.error || 'Processing failed');
+        }
+        const data = await res.json();
+        lastResult = data;
+        showResults(data);
+        status.textContent = `Done — ${data.rooms.length} rooms detected`;
+      } catch (err) {
+        status.textContent = 'Error: ' + err.message;
+      }
+      processBtn.disabled = false;
+    });
+
+    function showResults(data) {
+      results.style.display = 'block';
+      document.getElementById('annotatedImg').src = 'data:image/png;base64,' + data.annotated;
+      document.getElementById('detectedLabel').textContent = `Detected: ${data.rooms.length} rooms`;
+
+      const grid = document.getElementById('cropsGrid');
+      grid.innerHTML = '';
+      data.rooms.forEach(room => {
+        const card = document.createElement('div');
+        card.className = 'crop-card';
+        card.innerHTML = `
+          <img src="data:image/png;base64,${room.crop}" alt="${room.name}">
+          <div class="name">${room.name}</div>
+          <div class="area">${room.area_px.toLocaleString()} px</div>
+        `;
+        grid.appendChild(card);
+      });
+
+      downloadBtn.style.display = 'inline-block';
+    }
+
+    downloadBtn.addEventListener('click', async () => {
+      if (!lastResult) return;
+      const { default: JSZip } = await import('https://cdn.jsdelivr.net/npm/jszip@3.10.1/+esm');
+      const zip = new JSZip();
+      lastResult.rooms.forEach((room, i) => {
+        const binary = atob(room.crop);
+        const bytes = new Uint8Array(binary.length);
+        for (let j = 0; j < binary.length; j++) bytes[j] = binary.charCodeAt(j);
+        const safeName = room.name.replace(/[^a-zA-Z0-9_-]/g, '_');
+        zip.file(`${String(i + 1).padStart(2, '0')}_${safeName}.png`, bytes);
+      });
+      const blob = await zip.generateAsync({ type: 'blob' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'room_crops.zip';
+      a.click();
+    });
+  </script>
+</body>
+</html>

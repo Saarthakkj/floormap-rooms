@@ -1,0 +1,18 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Sample output directories
+samples/crops*/
+samples/crops_final/
+
+# Node
+node_modules/
+.vercel/
