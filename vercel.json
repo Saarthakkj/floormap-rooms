@@ -1,17 +1,7 @@
 {
-  "version": 2,
-  "builds": [
-    {
-      "src": "api/extract.py",
-      "use": "@vercel/python"
-    },
-    {
-      "src": "public/**",
-      "use": "@vercel/static"
+  "functions": {
+    "api/extract.py": {
+      "maxDuration": 60
     }
-  ],
-  "routes": [
-    { "src": "/api/(.*)", "dest": "/api/$1" },
-    { "src": "/(.*)", "dest": "/public/$1" }
-  ]
+  }
 }
