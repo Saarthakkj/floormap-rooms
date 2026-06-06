@@ -23,16 +23,15 @@ def process_image(img_bytes, close_kernel_size=15, min_room_area=3000, wall_incl
         print("[extract] ERROR: cv2.imdecode returned None")
         return None
 
-    print(f"[extract] image decoded: {img.shape}, importing pipeline...")
-    from pipeline import extract_rooms
+    print(f"[extract] image decoded: {img.shape}, importing vision pipeline...")
+    from vision_pipeline import extract_rooms_vision
 
-    print(f"[extract] running extract_rooms(kernel={close_kernel_size}, area={min_room_area}, wall={wall_include})...")
-    annotated_bgr, rooms = extract_rooms(
+    print(f"[extract] running extract_rooms_vision(kernel={close_kernel_size}, area={min_room_area}, wall={wall_include})...")
+    annotated_bgr, rooms = extract_rooms_vision(
         img,
         close_kernel_size=close_kernel_size,
         min_room_area=min_room_area,
         wall_include=wall_include,
-        run_ocr=False,
     )
     print(f"[extract] done, {len(rooms)} rooms found, encoding response...")
 
