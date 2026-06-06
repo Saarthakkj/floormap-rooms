@@ -173,17 +173,58 @@ def _crop_room_to_walls(
     filled = np.zeros((img_h, img_w), dtype=np.uint8)
     cv2.drawContours(filled, contours, -1, 255, cv2.FILLED)
 
+    # Snap to nearby walls
     snap_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
     walls_near = cv2.bitwise_and(
         cv2.dilate(filled, snap_kernel), wall_binary
     )
     filled = cv2.bitwise_or(filled, walls_near)
 
+    # Include door sweep areas: flood-fill white space (non-wall) within the
+    # bounding region that connects to the room mask. The door-close kernel
+    # used for segmentation marks sweep arcs as wall, but they should be
+    # included in the crop.
+    rx, ry, rw, rh = cv2.boundingRect(filled)
+    pad = 5
+    rx, ry = max(0, rx - pad), max(0, ry - pad)
+    rw = min(rw + 2 * pad, img_w - rx)
+    rh = min(rh + 2 * pad, img_h - ry)
+    white_space = cv2.bitwise_not(wall_binary)
+    local_white = white_space[ry:ry + rh, rx:rx + rw]
+    local_room = room_mask[ry:ry + rh, rx:rx + rw]
+    # Dilate room mask slightly to bridge into door sweep areas
+    bridge = cv2.dilate(local_room, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (11, 11)))
+    # Seed: white space that touches the room
+    seed = cv2.bitwise_and(local_white, bridge)
+    # Flood from seed through white space to capture door sweeps
+    flood_mask = np.zeros((rh + 2, rw + 2), dtype=np.uint8)
+    seed_points = np.column_stack(np.where(seed > 0))
+    for pt in seed_points[::20]:  # sample every 20th point for speed
+        if flood_mask[pt[0] + 1, pt[1] + 1] == 0:
+            cv2.floodFill(local_white.copy(), flood_mask, (pt[1], pt[0]), 255)
+    recovered = flood_mask[1:-1, 1:-1] * 255
+    # Only keep recovered area within the dilated crop boundary
+    local_filled = filled[ry:ry + rh, rx:rx + rw]
+    expanded_boundary = cv2.dilate(local_filled, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15)))
+    recovered = cv2.bitwise_and(recovered, expanded_boundary)
+    filled[ry:ry + rh, rx:rx + rw] = cv2.bitwise_or(local_filled, recovered)
+
     contours2, _ = cv2.findContours(
         filled, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
     )
+    if not contours2:
+        contours2 = contours
+
+    # Simplify contours to clean straight/curved lines (not jagged pixel edges)
     final = np.zeros((img_h, img_w), dtype=np.uint8)
-    cv2.drawContours(final, contours2, -1, 255, cv2.FILLED)
+    for cnt in contours2:
+        epsilon = 0.008 * cv2.arcLength(cnt, True)
+        approx = cv2.approxPolyDP(cnt, epsilon, True)
+        cv2.drawContours(final, [approx], -1, 255, cv2.FILLED)
+
+    # Light morphological smooth to remove pixel-level staircase artifacts
+    smooth_k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+    final = cv2.morphologyEx(final, cv2.MORPH_CLOSE, smooth_k, iterations=1)
 
     x, y, w, h = cv2.boundingRect(final)
     x = max(0, x)
