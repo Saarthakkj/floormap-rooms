@@ -16,6 +16,10 @@ uv.lock
 # Sample output directories
 samples/crops*/
 samples/crops_final/
+samples/vision_output*/
+
+# Environment secrets
+.env
 
 # Node
 node_modules/
